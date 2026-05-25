@@ -791,28 +791,154 @@ const stages = [
   '거의 다 됐어요!'
 ];
 
-function generateSite() {
-  if (!promptInput.value.trim()) return;
+async function generateSite() {
+  const userPrompt = promptInput.value.trim();
+  if (!userPrompt) return;
+
   document.getElementById('loading').classList.add('active');
   const stageEl = document.getElementById('loadingStage');
-  let i = 0;
   stageEl.textContent = stages[0];
-  const interval = setInterval(() => {
-    i++;
-    if (i < stages.length) {
-      stageEl.textContent = stages[i];
-    } else {
-      clearInterval(interval);
-      document.getElementById('loading').classList.remove('active');
-      document.getElementById('landing').style.display = 'none';
-      document.getElementById('editor').classList.add('active');
-      setTimeout(() => {
-        const hint = document.getElementById('hintBanner');
-        setTimeout(() => hint.style.opacity = '0', 5000);
-        setTimeout(() => hint.style.display = 'none', 5800);
-      }, 500);
+
+  // 로딩 stage 회전 애니메이션
+  let stageIdx = 0;
+  const stageInterval = setInterval(() => {
+    stageIdx = (stageIdx + 1) % stages.length;
+    stageEl.textContent = stages[stageIdx];
+  }, 1100);
+
+  try {
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: userPrompt })
+    });
+
+    const result = await response.json();
+    clearInterval(stageInterval);
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || '생성에 실패했습니다');
     }
-  }, 700);
+
+    // 받은 사이트 데이터를 화면에 채워넣기
+    applySiteData(result.site);
+
+    // 편집기로 전환
+    document.getElementById('loading').classList.remove('active');
+    document.getElementById('landing').style.display = 'none';
+    document.getElementById('editor').classList.add('active');
+
+    setTimeout(() => {
+      const hint = document.getElementById('hintBanner');
+      if (!hint) return;
+      setTimeout(() => hint.style.opacity = '0', 5000);
+      setTimeout(() => hint.style.display = 'none', 5800);
+    }, 500);
+
+  } catch (err) {
+    clearInterval(stageInterval);
+    document.getElementById('loading').classList.remove('active');
+    alert('사이트 생성 실패: ' + err.message + '\n\n잠시 후 다시 시도해보세요.');
+    console.error(err);
+  }
+}
+
+// 카테고리별 헤로 배경 그라데이션
+const CATEGORY_GRADIENTS = {
+  beauty:    'linear-gradient(135deg, #2d1b3d 0%, #532b5e 50%, #8b3a62 100%)',
+  food:      'linear-gradient(135deg, #2d1f0f 0%, #5e3d1f 50%, #b8702f 100%)',
+  tech:      'linear-gradient(135deg, #0a1929 0%, #1e3a5f 50%, #2e6ba8 100%)',
+  fitness:   'linear-gradient(135deg, #1a2e1a 0%, #2e5e3a 50%, #4ea868 100%)',
+  education: 'linear-gradient(135deg, #1a1f2e 0%, #3a4565 50%, #6878a8 100%)',
+  finance:   'linear-gradient(135deg, #0a1f1a 0%, #1f4d3a 50%, #3a8a68 100%)',
+  health:    'linear-gradient(135deg, #1a2a3a 0%, #2e4a6a 50%, #5e8aa8 100%)',
+  shopping:  'linear-gradient(135deg, #2e1a2e 0%, #5e2e5e 50%, #a85ea8 100%)',
+  service:   'linear-gradient(135deg, #1a1a1a 0%, #3a3a3a 50%, #6a6a6a 100%)'
+};
+
+function applySiteData(site) {
+  if (!site) return;
+
+  // 띠 배너
+  const banner = document.querySelector('.site-banner');
+  if (banner && site.bannerText) banner.textContent = `— ${site.bannerText} —`;
+
+  // 로고
+  const logo = document.querySelector('.site-logo');
+  if (logo && site.siteName) logo.textContent = site.siteName;
+
+  // 네비 메뉴
+  const navLeft = document.querySelector('.site-nav-left');
+  if (navLeft && Array.isArray(site.navItems)) {
+    navLeft.innerHTML = site.navItems.slice(0, 4)
+      .map(item => `<span>${escapeHtml(item)}</span>`).join('');
+  }
+
+  // 헤로 아이브로우
+  const eyebrow = document.querySelector('.hero-eyebrow');
+  if (eyebrow && site.heroEyebrow) eyebrow.textContent = site.heroEyebrow;
+
+  // 헤로 헤드라인 (small + main + sub)
+  const heroHead = document.querySelector('.hero-headline');
+  if (heroHead) {
+    const small = site.heroHeadlineSmall
+      ? `<span class="small">${escapeHtml(site.heroHeadlineSmall)}</span>` : '';
+    const main = escapeHtml(site.heroHeadlineMain || '');
+    const sub = site.heroHeadlineSub ? `<br>${escapeHtml(site.heroHeadlineSub)}` : '';
+    heroHead.innerHTML = `${small}${main}${sub}`;
+  }
+
+  // 헤로 설명
+  const desc = document.querySelector('.hero-desc');
+  if (desc && site.heroDescription) desc.textContent = site.heroDescription;
+
+  // CTA 버튼
+  const ctaBtns = document.querySelectorAll('.hero-ctas .hero-btn');
+  if (ctaBtns[0] && site.ctaPrimary) ctaBtns[0].textContent = site.ctaPrimary;
+  if (ctaBtns[1] && site.ctaSecondary) ctaBtns[1].textContent = site.ctaSecondary;
+
+  // 헤로 배경 (카테고리별 그라데이션으로 교체 — 이미지 의존성 제거)
+  const heroSection = document.querySelector('.hero-section');
+  if (heroSection) {
+    const gradient = CATEGORY_GRADIENTS[site.category] || CATEGORY_GRADIENTS.service;
+    heroSection.style.backgroundImage = gradient;
+  }
+
+  // 특징 섹션 제목·부제
+  const featTitle = document.querySelector('.features-title');
+  if (featTitle && site.featuresTitle) featTitle.textContent = site.featuresTitle;
+  const featSub = document.querySelector('.features-sub');
+  if (featSub && site.featuresSub) featSub.textContent = site.featuresSub;
+
+  // 특징 카드 3개
+  const cards = document.querySelectorAll('.feature-card');
+  if (Array.isArray(site.features)) {
+    site.features.slice(0, 3).forEach((f, i) => {
+      if (!cards[i]) return;
+      const icon = cards[i].querySelector('.feature-icon');
+      const title = cards[i].querySelector('.feature-title');
+      const text = cards[i].querySelector('.feature-text');
+      if (icon && f.icon) icon.textContent = f.icon;
+      if (title && f.title) title.textContent = f.title;
+      if (text && f.text) text.textContent = f.text;
+    });
+  }
+
+  // 상단 바 사이트명·URL
+  const siteNameTop = document.querySelector('.site-name');
+  if (siteNameTop && site.siteName) siteNameTop.textContent = site.siteName;
+  const siteUrlTop = document.querySelector('.site-url');
+  if (siteUrlTop && site.urlSlug) siteUrlTop.textContent = `riceoncode.app/${site.urlSlug}`;
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 // === Inline editor ===
